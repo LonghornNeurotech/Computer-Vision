@@ -16,6 +16,8 @@ def print_o_map(occupancy_map):
     for row in occupancy_map:
         print(row)
 
+# creates the dataframe by merging servo data with lidar data
+# matches up the timestamps
 def create_df(servo_path, lidar_path):
     PRECISION = 3
     ORIGINAL_BASE = 16
@@ -34,6 +36,8 @@ def create_df(servo_path, lidar_path):
     # transfer the content in the original df to the new df, while interpreting the values in the new df
 
     updated_lidar_data = {}
+
+    # interpret lidar data
     for idx, row in enumerate(raw_lidar_data.itertuples()):
         new_ts = row.timestamp_s
         new_dist = int(row.byte2, ORIGINAL_BASE) + int(row.byte3, ORIGINAL_BASE) * RAW_MULT_CONSTANT
@@ -43,6 +47,7 @@ def create_df(servo_path, lidar_path):
     lidar_data = pd.DataFrame(updated_lidar_data)
     lidar_data = lidar_data.groupby('timestamp_s').mean()
 
+    # add the correct angle degree for each timestamp
     for idx, row in enumerate(servo_log.itertuples()):
         cur_ts = round(row.timestamp_s, PRECISION)
 
@@ -54,6 +59,8 @@ def create_df(servo_path, lidar_path):
 
     # ignore NaN values for distance
     return lidar_data.dropna(subset = ["avg_dist"])
+
+# convert polar coordinates in lidar_data to cartesian
 
 def polar_to_cartesian(lidar_data):
     xs = []
@@ -72,6 +79,7 @@ def polar_to_cartesian(lidar_data):
 
     return xs, ys
 
+# initalize the grid
 def create_grid(xs, ys):    
     min_x = int(min(xs)) # round down
     max_x = math.ceil(max(xs)) # round up
@@ -86,6 +94,7 @@ def create_grid(xs, ys):
     ), UNKNOWN)
 
     full_coords = set()
+
     # populate our occupancy map with objects, from LiDAR data
     for x, y in zip(xs, ys):
         if (x == 0 and y == 0):
@@ -98,13 +107,11 @@ def create_grid(xs, ys):
 
     return grid, full_coords, min_x, min_y
 
-
-
+# determine if a coordinate pair is in bounds in the grid, false otherwise
 def in_bounds(x, y, grid):
     return x < len(grid) and x >= 0 and y < len(grid[0]) and y >= 0
 
-
-
+# apply bresenham algorithm and update grid accordingly with EMPTY/FULL spaces
 def bresenham(grid, full_coords, c_x, c_y):
     # our sensor is at the center of the grid
     for pair in full_coords:
@@ -147,13 +154,18 @@ def bresenham(grid, full_coords, c_x, c_y):
     return grid
 
 
-
+# visualize our data
 def visualize(data):
     plt.imshow(data, origin='lower', cmap='viridis')
     plt.colorbar() # Adds a legend for the color scale
     plt.show()
 
+# main function to generate the occupancy map
 def generate():
+    # this code that is commented is based on the data/servo_log.csv and data/tf_luna_raw.csv
+    # these files do NOT assume the servo data and LiDAR data is synchronized
+    # as a result, they call the create_df function
+
     # SERVO_PATH = 'data/servo_log.csv'
     # LIDAR_PATH = 'data/tf_luna_raw.csv'
     # lidar_data = create_df(SERVO_PATH, LIDAR_PATH)
@@ -163,6 +175,8 @@ def generate():
     # visualize(occupancy_map.T)
 
     
+    # this code works on Ryan's data, which assumes the timestamps of servo log and LiDAR are completely syncrhonized
+    # see data/lidar_spin_scan.csv
     lidar_data = pd.read_csv(LIDAR_PATH)
     lidar_data.rename(columns={'angle_deg': 'servo_angle_deg', 'distance_m': 'avg_dist'}, inplace=True)
     xs, ys = polar_to_cartesian(lidar_data)
